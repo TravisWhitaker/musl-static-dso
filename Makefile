@@ -78,6 +78,32 @@ LDSO_PATHNAME = $(syslibdir)/ld-musl-$(ARCH)$(SUBARCH).so.1
 -include config.mak
 -include $(srcdir)/arch/$(ARCH)/arch.mak
 
+# libc-embed.a: the variant of libc for linking statically into a shared
+# library that is loaded by a program using another libc. Its objects
+# (.eo) are built from the same sources with -DMUSL_EMBED; files that
+# assume musl owns the process are replaced by ones in embed/.
+EMBED_LIBS =
+EMBED_TOOLS =
+EMBED_OBJS =
+EMBED_CHECK =
+ifeq ($(EMBED),yes)
+EMBED_EXCLUDE = %/__init_tls.eo %/__libc_start_main.eo %/__reset_tls.eo %/__environ.eo \
+	%/__tls_get_addr.eo %/pthread_create.eo %/synccall.eo \
+	%/__set_thread_area.eo %/__unmapself.eo \
+	obj/src/process/fork.eo obj/src/process/_Fork.eo \
+	obj/src/ldso/dlopen.eo obj/src/ldso/dlsym.eo obj/src/ldso/%/dlsym.eo obj/src/ldso/__dlsym.eo \
+	obj/src/ldso/dlclose.eo obj/src/ldso/dladdr.eo obj/src/ldso/dlinfo.eo \
+	obj/src/ldso/dl_iterate_phdr.eo obj/src/ldso/tlsdesc.eo obj/src/ldso/%/tlsdesc.eo
+EMBED_SRCS = $(sort $(wildcard $(srcdir)/embed/*.c))
+EMBED_OBJS = $(filter-out $(EMBED_EXCLUDE),$(LIBC_OBJS:.o=.eo)) \
+	$(patsubst $(srcdir)/%.c,obj/%.eo,$(EMBED_SRCS))
+EMBED_LIBS = lib/libc-embed.a
+EMBED_TOOLS = obj/musl-embed-link obj/musl-embed-check-so
+EMBED_CHECK = obj/libc-embed.checked
+endif
+ALL_LIBS += $(EMBED_LIBS)
+ALL_TOOLS += $(EMBED_TOOLS)
+
 ifeq ($(ARCH),)
 
 all:
@@ -86,11 +112,11 @@ all:
 
 else
 
-all: $(ALL_LIBS) $(ALL_TOOLS)
+all: $(ALL_LIBS) $(ALL_TOOLS) $(EMBED_CHECK)
 
-OBJ_DIRS = $(sort $(patsubst %/,%,$(dir $(ALL_LIBS) $(ALL_TOOLS) $(ALL_OBJS) $(GENH) $(GENH_INT))) obj/include)
+OBJ_DIRS = $(sort $(patsubst %/,%,$(dir $(ALL_LIBS) $(ALL_TOOLS) $(ALL_OBJS) $(EMBED_OBJS) $(GENH) $(GENH_INT))) obj/include)
 
-$(ALL_LIBS) $(ALL_TOOLS) $(ALL_OBJS) $(ALL_OBJS:%.o=%.lo) $(GENH) $(GENH_INT): | $(OBJ_DIRS)
+$(ALL_LIBS) $(ALL_TOOLS) $(ALL_OBJS) $(EMBED_OBJS) $(ALL_OBJS:%.o=%.lo) $(GENH) $(GENH_INT): | $(OBJ_DIRS)
 
 $(OBJ_DIRS):
 	mkdir -p $@
@@ -166,6 +192,44 @@ lib/libc.a: $(AOBJS)
 	rm -f $@
 	$(AR) rc $@ $(AOBJS)
 	$(RANLIB) $@
+
+ifeq ($(EMBED),yes)
+$(EMBED_OBJS): CFLAGS_ALL += -fPIC -DMUSL_EMBED $(CFLAGS_EMBED)
+$(MEMOPS_OBJS:%.o=%.eo): CFLAGS_ALL += $(CFLAGS_MEMOPS)
+$(NOSSP_OBJS:%.o=%.eo) obj/embed/init.eo: CFLAGS_ALL += $(CFLAGS_NOSSP)
+$(OPTIMIZE_SRCS:$(srcdir)/%.c=obj/%.eo): CFLAGS += -O3
+obj/src/internal/version.eo: obj/src/internal/version.h
+$(EMBED_OBJS): $(srcdir)/src/internal/embed_impl.h
+
+obj/%.eo: $(srcdir)/%.s
+	$(AS_CMD)
+
+obj/%.eo: $(srcdir)/%.S
+	$(CC_CMD)
+
+obj/%.eo: $(srcdir)/%.c $(GENH) $(IMPH)
+	$(CC_CMD)
+
+lib/libc-embed.a: $(EMBED_OBJS)
+	rm -f $@
+	$(AR) rc $@ $(EMBED_OBJS)
+	$(RANLIB) $@
+
+$(EMBED_CHECK): lib/libc-embed.a $(srcdir)/tools/musl-embed-check.sh
+	sh $(srcdir)/tools/musl-embed-check.sh $(ARCH) lib/libc-embed.a "$(CROSS_COMPILE)"
+	touch $@
+
+# Installed only once it has passed the self-check.
+$(DESTDIR)$(libdir)/libc-embed.a: $(EMBED_CHECK)
+
+obj/musl-embed-link: $(srcdir)/tools/musl-embed-link.sh config.mak
+	sed -e "s!@CC@!$(CC)!g" -e "s!@LIBDIR@!$(libdir)!g" $< > $@
+	chmod +x $@
+
+obj/musl-embed-check-so: $(srcdir)/tools/musl-embed-check-so.sh
+	cp $< $@
+	chmod +x $@
+endif
 
 $(EMPTY_LIBS):
 	rm -f $@

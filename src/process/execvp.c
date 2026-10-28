@@ -4,7 +4,9 @@
 #include <errno.h>
 #include <limits.h>
 
+#ifndef MUSL_EMBED
 extern char **__environ;
+#endif
 
 int __execvpe(const char *file, char *const argv[], char *const envp[])
 {

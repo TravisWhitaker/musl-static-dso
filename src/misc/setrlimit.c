@@ -2,6 +2,9 @@
 #include <errno.h>
 #include "syscall.h"
 #include "libc.h"
+#ifdef MUSL_EMBED
+#include "embed_impl.h"
+#endif
 
 #define MIN(a, b) ((a)<(b) ? (a) : (b))
 #define FIX(x) do{ if ((x)>=SYSCALL_RLIM_INFINITY) (x)=RLIM_INFINITY; }while(0)
@@ -12,7 +15,7 @@ struct ctx {
 	int err;
 };
 
-#ifdef SYS_setrlimit
+#if defined(SYS_setrlimit) && !defined(MUSL_EMBED)
 static void do_setrlimit(void *p)
 {
 	struct ctx *c = p;
@@ -31,7 +34,20 @@ int setrlimit(int resource, const struct rlimit *rlim)
 		rlim = &tmp;
 	}
 	int ret = __syscall(SYS_prlimit64, 0, resource, rlim, 0);
-#ifdef SYS_setrlimit
+#ifdef MUSL_EMBED
+	/* Kernels before 2.6.36 lack prlimit64. musl cannot reach every
+	 * thread for its fallback below, but the host can; struct rlimit
+	 * and RLIM_INFINITY are the same in glibc. */
+	if (ret == -ENOSYS) {
+		int (*f)(int, const void *) = EMBED_HOST(setrlimit);
+		if (f) {
+			if (!f(resource, rlim)) return 0;
+			errno = __embed_host_errno(EINVAL);
+			return -1;
+		}
+	}
+#endif
+#if defined(SYS_setrlimit) && !defined(MUSL_EMBED)
 	if (ret != -ENOSYS) return __syscall_ret(ret);
 
 	struct ctx c = {

@@ -37,6 +37,7 @@ long __syscall_cp_c(syscall_arg_t nr,
 	return r;
 }
 
+#ifndef MUSL_EMBED
 static void _sigaddset(sigset_t *set, int sig)
 {
 	unsigned s = sig-1;
@@ -71,6 +72,7 @@ static void cancel_handler(int sig, siginfo_t *si, void *ctx)
 
 	__syscall(SYS_tkill, self->tid, SIGCANCEL);
 }
+#endif
 
 void __testcancel()
 {
@@ -79,6 +81,14 @@ void __testcancel()
 		__cancel();
 }
 
+#ifdef MUSL_EMBED
+int pthread_cancel(pthread_t t)
+{
+	/* Cancellation needs a signal, and every implementation-internal
+	 * signal number belongs to the host libc in the embedded build. */
+	return ENOTSUP;
+}
+#else
 static void init_cancellation()
 {
 	struct sigaction sa = {
@@ -104,3 +114,4 @@ int pthread_cancel(pthread_t t)
 	}
 	return pthread_kill(t, SIGCANCEL);
 }
+#endif

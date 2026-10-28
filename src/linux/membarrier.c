@@ -12,16 +12,21 @@ static void dummy_0(void)
 weak_alias(dummy_0, __tl_lock);
 weak_alias(dummy_0, __tl_unlock);
 
+#ifndef MUSL_EMBED
 static sem_t barrier_sem;
 
 static void bcast_barrier(int s)
 {
 	sem_post(&barrier_sem);
 }
+#endif
 
 int __membarrier(int cmd, int flags)
 {
 	int r = __syscall(SYS_membarrier, cmd, flags);
+	/* The embedded build omits the emulation below: it needs an
+	 * implementation-internal signal, which belongs to the host. */
+#ifndef MUSL_EMBED
 	/* Emulate the private expedited command, which is needed by the
 	 * dynamic linker for installation of dynamic TLS, for older
 	 * kernels that lack the syscall. Unlike the syscall, this only
@@ -52,6 +57,7 @@ int __membarrier(int cmd, int flags)
 		__tl_unlock();
 		__restore_sigs(&set);
 	}
+#endif
 	return __syscall_ret(r);
 }
 

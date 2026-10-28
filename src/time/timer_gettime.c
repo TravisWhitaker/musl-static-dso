@@ -1,13 +1,27 @@
 #include <time.h>
 #include <limits.h>
 #include "pthread_impl.h"
+#ifdef MUSL_EMBED
+#include "embed_impl.h"
+#endif
 
 int timer_gettime(timer_t t, struct itimerspec *val)
 {
+#ifdef MUSL_EMBED
+	/* See timer_create.c. Without host timers, all are kernel ids. */
+	if (__embed_host_timers) {
+		if (__embed_host.timer_gettime(t, val)) {
+			errno = __embed_host_errno(EINVAL);
+			return -1;
+		}
+		return 0;
+	}
+#else
 	if ((intptr_t)t < 0) {
 		pthread_t td = (void *)((uintptr_t)t << 1);
 		t = (void *)(uintptr_t)(td->timer_id & INT_MAX);
 	}
+#endif
 #ifdef SYS_timer_gettime64
 	int r = -ENOSYS;
 	if (sizeof(time_t) > 4)

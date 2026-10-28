@@ -37,7 +37,13 @@ volatile int *const __bump_lockptr = lock;
 
 static void *__simple_malloc(size_t n)
 {
+#ifdef MUSL_EMBED
+	/* The program break belongs to the host. brk == end never holds,
+	 * so only the mmap path below is used. */
+	static uintptr_t brk = -1, cur, end;
+#else
 	static uintptr_t brk, cur, end;
+#endif
 	static unsigned mmap_step;
 	size_t align=1;
 	void *p;
@@ -58,11 +64,13 @@ static void *__simple_malloc(size_t n)
 	if (n > end-cur) {
 		size_t req = n - (end-cur) + PAGE_SIZE-1 & -PAGE_SIZE;
 
+#ifndef MUSL_EMBED
 		if (!cur) {
 			brk = __syscall(SYS_brk, 0);
 			brk += -brk & PAGE_SIZE-1;
 			cur = end = brk;
 		}
+#endif
 
 		if (brk == end && req < SIZE_MAX-brk
 		    && !traverses_stack_p(brk, brk+req)

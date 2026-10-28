@@ -6,7 +6,9 @@
 #include "stdio_impl.h"
 #include "syscall.h"
 
+#ifndef MUSL_EMBED
 extern char **__environ;
+#endif
 
 FILE *popen(const char *cmd, const char *mode)
 {

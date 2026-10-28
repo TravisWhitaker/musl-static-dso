@@ -12,6 +12,63 @@ struct ksigevent {
 	int sigev_tid;
 };
 
+#ifdef MUSL_EMBED
+#include "embed_impl.h"
+
+/* POSIX timers for the embedded build. When the host provides them, all
+ * timers are the host's, whatever the notification type, so that timer_t
+ * values have a single meaning (glibc, like upstream musl, encodes
+ * SIGEV_THREAD timers as pointers and others as kernel timer ids).
+ * SIGEV_THREAD notifications then run on a host thread. Without them,
+ * SIGEV_THREAD is unsupported: upstream's implementation needs an
+ * implementation-internal signal, which belongs to the host. */
+int timer_create(clockid_t clk, struct sigevent *restrict evp, timer_t *restrict res)
+{
+	struct ksigevent ksev, *ksevp=0;
+	int timerid;
+
+	if (__embed_host_timers) {
+		struct sigevent sev;
+		if (evp) {
+			sev = *evp;
+			/* musl's pthread_attr_t is not the host's. */
+			if (sev.sigev_notify == SIGEV_THREAD)
+				sev.sigev_notify_attributes = 0;
+		}
+		if (__embed_host.timer_create(clk, evp ? &sev : 0, (void **)res)) {
+			errno = __embed_host_errno(EINVAL);
+			return -1;
+		}
+		return 0;
+	}
+
+	switch (evp ? evp->sigev_notify : SIGEV_SIGNAL) {
+	case SIGEV_NONE:
+	case SIGEV_SIGNAL:
+	case SIGEV_THREAD_ID:
+		if (evp) {
+			ksev.sigev_value = evp->sigev_value;
+			ksev.sigev_signo = evp->sigev_signo;
+			ksev.sigev_notify = evp->sigev_notify;
+			if (evp->sigev_notify == SIGEV_THREAD_ID)
+				ksev.sigev_tid = evp->sigev_notify_thread_id;
+			else
+				ksev.sigev_tid = 0;
+			ksevp = &ksev;
+		}
+		if (syscall(SYS_timer_create, clk, ksevp, &timerid) < 0)
+			return -1;
+		*res = (void *)(intptr_t)timerid;
+		return 0;
+	case SIGEV_THREAD:
+		errno = ENOTSUP;
+		return -1;
+	default:
+		errno = EINVAL;
+		return -1;
+	}
+}
+#else
 struct start_args {
 	sem_t sem1, sem2;
 	struct sigevent *sev;
@@ -150,3 +207,4 @@ int timer_create(clockid_t clk, struct sigevent *restrict evp, timer_t *restrict
 
 	return 0;
 }
+#endif

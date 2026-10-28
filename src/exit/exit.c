@@ -4,6 +4,9 @@
 #include "pthread_impl.h"
 #include "atomic.h"
 #include "syscall.h"
+#ifdef MUSL_EMBED
+#include "embed_impl.h"
+#endif
 
 static void dummy()
 {
@@ -40,8 +43,18 @@ _Noreturn void exit(int code)
 	if (prev == tid) a_crash();
 	else if (prev) for (;;) __sys_pause();
 
+#ifdef MUSL_EMBED
+	/* The host's exit runs the host's atexit handlers, then the
+	 * destructors of every object, among them this object's, which
+	 * run musl's atexit handlers and flush musl's stdio last (both
+	 * leave locks held that destructors may still need). */
+	void (*host_exit)(int) = EMBED_HOST(exit);
+	if (host_exit) host_exit(code);
+	__embed_exit_hooks();
+#else
 	__funcs_on_exit();
 	__libc_exit_fini();
 	__stdio_exit();
+#endif
 	_Exit(code);
 }

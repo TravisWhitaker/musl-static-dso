@@ -6,7 +6,9 @@
 #include <errno.h>
 #include "pthread_impl.h"
 
+#ifndef MUSL_EMBED
 extern char **__environ;
+#endif
 
 int system(const char *cmd)
 {

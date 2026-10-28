@@ -18,7 +18,11 @@ void __init_ssp(void *entropy)
 	((char *)&__stack_chk_guard)[1] = 0;
 #endif
 
+#ifndef MUSL_EMBED
+	/* In the embedded build the TCB canary slot (where the ABI has
+	 * one) belongs to the host; only the global guard is musl's. */
 	__pthread_self()->canary = __stack_chk_guard;
+#endif
 }
 
 void __stack_chk_fail(void)

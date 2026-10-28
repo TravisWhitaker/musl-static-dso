@@ -34,6 +34,9 @@ Optional features:
   --enable-wrapper=...    build given musl toolchain wrapper [auto]
   --disable-shared        inhibit building shared library [enabled]
   --disable-static        inhibit building static library [enabled]
+  --disable-embed         do not build libc-embed.a, the variant of libc for
+                          shared libraries loaded by programs that use
+                          another libc (x86_64 and aarch64 only) [auto]
 
 Optional packages:
   --with-malloc=...       choose malloc implementation [mallocng]
@@ -119,6 +122,7 @@ CFLAGS_C99FSE=
 CFLAGS_AUTO=
 CFLAGS_MEMOPS=
 CFLAGS_NOSSP=
+CFLAGS_EMBED=
 CFLAGS_TRY=
 LDFLAGS_AUTO=
 LDFLAGS_TRY=
@@ -143,6 +147,7 @@ wrapper=auto
 gcc_wrapper=no
 clang_wrapper=no
 malloc_dir=mallocng
+embed=auto
 
 for arg ; do
 case "$arg" in
@@ -173,6 +178,8 @@ case "$arg" in
 --enable-gcc-wrapper|--enable-gcc-wrapper=yes) wrapper=yes ; gcc_wrapper=yes ;;
 --disable-gcc-wrapper|--enable-gcc-wrapper=no) wrapper=no ;;
 --with-malloc=*) malloc_dir=${arg#*=} ;;
+--enable-embed|--enable-embed=yes) embed=yes ;;
+--disable-embed|--enable-embed=no) embed=no ;;
 --enable-*|--disable-*|--with-*|--without-*|--*dir=*) ;;
 --host=*|--target=*) target=${arg#*=} ;;
 --build=*) build=${arg#*=} ;;
@@ -790,6 +797,29 @@ if trycppif "__FAST_MATH__" \
 fail "$0: error: compiler has broken floating point; check CFLAGS"
 fi
 
+#
+# Decide whether to build libc-embed.a (see embed/README.md). All of
+# its objects use ELF TLS through the host dynamic linker, and on
+# x86_64 the classic __tls_get_addr dialect, which old loaders support.
+#
+printf "checking whether to build libc-embed.a... "
+case "$ARCH" in
+x86_64|aarch64) embed_ok=yes ;;
+*) embed_ok=no ;;
+esac
+if test "$embed" = auto ; then
+test "$malloc_dir" = mallocng && embed=$embed_ok || embed=no
+fi
+printf "%s\n" "$embed"
+if test "$embed" = yes ; then
+test "$embed_ok" = yes || fail "$0: error: --enable-embed is not supported on $ARCH"
+test "$malloc_dir" = mallocng || fail "$0: error: --enable-embed requires --with-malloc=mallocng"
+tryflag CFLAGS_EMBED -ftls-model=global-dynamic
+if test "$ARCH" = x86_64 ; then
+tryflag CFLAGS_EMBED -mtls-dialect=gnu || fail "$0: error: compiler does not support -mtls-dialect=gnu"
+fi
+fi
+
 printf "creating config.mak... "
 
 cmdline=$(quote "$0")
@@ -830,6 +860,8 @@ ALL_TOOLS = $tools
 TOOL_LIBS = $tool_libs
 ADD_CFI = $ADD_CFI
 MALLOC_DIR = $malloc_dir
+EMBED = $embed
+CFLAGS_EMBED = $CFLAGS_EMBED
 EOF
 test "x$static" = xno && echo "STATIC_LIBS ="
 test "x$shared" = xno && echo "SHARED_LIBS ="

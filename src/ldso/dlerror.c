@@ -10,6 +10,12 @@
 #define realloc __libc_realloc
 #define free __libc_free
 
+#ifdef MUSL_EMBED
+/* embed/dl.c defines dlerror, which falls back to the host's. */
+#define dlerror __embed_dlerror_local
+hidden char *dlerror(void);
+#endif
+
 char *dlerror()
 {
 	pthread_t self = __pthread_self();

@@ -4,6 +4,25 @@
 #include "syscall.h"
 #include "libc.h"
 
+#ifdef MUSL_EMBED
+#include <errno.h>
+#include "embed_impl.h"
+
+/* See __setxid: the host applies the change to all threads. */
+int setgroups(size_t count, const gid_t list[])
+{
+	int (*f)(size_t, const unsigned *) = EMBED_HOST(setgroups);
+	if (!f) {
+		errno = ENOTSUP;
+		return -1;
+	}
+	if (f(count, list)) {
+		errno = __embed_host_errno(EINVAL);
+		return -1;
+	}
+	return 0;
+}
+#else
 struct ctx {
 	size_t count;
 	const gid_t *list;
@@ -34,3 +53,4 @@ int setgroups(size_t count, const gid_t list[])
 	__synccall(do_setgroups, &c);
 	return __syscall_ret(c.ret);
 }
+#endif

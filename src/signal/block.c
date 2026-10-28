@@ -20,7 +20,11 @@ static const unsigned long app_mask[] = {
 	0x7fffffff, 0xfffffffc, -1UL, -1UL
 #endif
 #else
-#if _NSIG == 65
+#if _NSIG == 65 && defined(MUSL_EMBED)
+	/* 32 and 33 are the host's internal signals, but 34 is glibc's
+	 * SIGRTMIN, an application signal there. */
+	0xfffffffe7fffffff
+#elif _NSIG == 65
 	0xfffffffc7fffffff
 #else
 	0xfffffffc7fffffff, -1UL

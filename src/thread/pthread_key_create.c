@@ -14,6 +14,15 @@ static void nodtor(void *dummy)
 {
 }
 
+#ifdef MUSL_EMBED
+/* A deleted key cannot be cleared on threads created by the host (their
+ * tsd arrays live in TLS that musl cannot enumerate), so its slot is
+ * retired instead of being made available for reuse. */
+static void deleted(void *dummy)
+{
+}
+#endif
+
 static void dummy_0(void)
 {
 }
@@ -62,11 +71,20 @@ int __pthread_key_delete(pthread_key_t k)
 	__pthread_rwlock_wrlock(&key_lock);
 
 	__tl_lock();
+#ifdef MUSL_EMBED
+	self->tsd[k] = 0;
+	for (td=__embed_thread_list.next; td!=&__embed_thread_list; td=td->next)
+		td->tsd[k] = 0;
+	__tl_unlock();
+
+	keys[k] = deleted;
+#else
 	do td->tsd[k] = 0;
 	while ((td=td->next)!=self);
 	__tl_unlock();
 
 	keys[k] = 0;
+#endif
 
 	__pthread_rwlock_unlock(&key_lock);
 	__restore_sigs(&set);
@@ -85,7 +103,11 @@ void __pthread_tsd_run_dtors()
 			void *val = self->tsd[i];
 			void (*dtor)(void *) = keys[i];
 			self->tsd[i] = 0;
+#ifdef MUSL_EMBED
+			if (val && dtor && dtor != nodtor && dtor != deleted) {
+#else
 			if (val && dtor && dtor != nodtor) {
+#endif
 				__pthread_rwlock_unlock(&key_lock);
 				dtor(val);
 				__pthread_rwlock_rdlock(&key_lock);

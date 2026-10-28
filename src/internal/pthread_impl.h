@@ -58,6 +58,15 @@ struct pthread {
 	volatile int killlock[1];
 	char *dlerror_buf;
 	void *stdio_locks;
+#ifdef MUSL_EMBED
+	int embed_kind;                  /* EMBED_FOREIGN or EMBED_OWNED */
+	int embed_exit_state;            /* detach race result, for the trampoline */
+	void *embed_jb;                  /* jmp_buf * of the start trampoline */
+	unsigned long embed_host_handle; /* host pthread_t, or 0 */
+	int embed_host_join;             /* owned: joinable at host level */
+	int embed_fork_skip;             /* fork handlers skipped (exiting) */
+	unsigned long embed_fork_mask[_NSIG/8/sizeof(long)];
+#endif
 
 	/* Part 3 -- the positions of these fields relative to
 	 * the end of the structure is external and internal ABI. */
@@ -114,7 +123,34 @@ enum {
 #define DTP_OFFSET 0
 #endif
 
-#ifdef TLS_ABOVE_TP
+#ifdef MUSL_EMBED
+/* In the embedded build musl never touches the thread pointer, which
+ * belongs to the host libc. Per-thread state is found through ordinary
+ * ELF TLS of the containing shared object instead. TP_ADJ is left
+ * undefined on purpose. */
+enum {
+	EMBED_FOREIGN = 0, /* thread created by the host; TCB lives in TLS */
+	EMBED_OWNED = 1,   /* thread created by musl's pthread_create */
+};
+
+struct __embed_tls {
+	struct pthread *self;
+	struct pthread tcb;
+	void *tsd[PTHREAD_KEYS_MAX];
+};
+
+extern hidden __thread struct __embed_tls __embed_tls;
+hidden struct pthread *__embed_self_slow(struct __embed_tls *);
+
+/* Sentinel of the list of musl-owned threads. Never a real thread. */
+extern hidden struct pthread __embed_thread_list;
+
+static inline struct pthread *__pthread_self(void)
+{
+	struct __embed_tls *t = &__embed_tls;
+	return t->self ? t->self : __embed_self_slow(t);
+}
+#elif defined(TLS_ABOVE_TP)
 #define TP_ADJ(p) ((char *)(p) + sizeof(struct pthread) + TP_OFFSET)
 #define __pthread_self() ((pthread_t)(__get_tp() - sizeof(struct __pthread) - TP_OFFSET))
 #else

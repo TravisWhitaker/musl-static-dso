@@ -19,7 +19,11 @@ _Noreturn void abort(void)
 	LOCK(__abort_lock);
 	__syscall(SYS_rt_sigaction, SIGABRT,
 		&(struct k_sigaction){.handler = SIG_DFL}, 0, _NSIG/8);
+#ifdef MUSL_EMBED
+	__syscall(SYS_tgkill, __syscall(SYS_getpid), __syscall(SYS_gettid), SIGABRT);
+#else
 	__syscall(SYS_tkill, __pthread_self()->tid, SIGABRT);
+#endif
 	__syscall(SYS_rt_sigprocmask, SIG_UNBLOCK,
 		&(long[_NSIG/(8*sizeof(long))]){1UL<<(SIGABRT-1)}, 0, _NSIG/8);
 

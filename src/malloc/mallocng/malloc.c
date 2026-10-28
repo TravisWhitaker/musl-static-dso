@@ -53,6 +53,10 @@ struct meta *alloc_meta(void)
 	size_t pagesize = PGSZ;
 	if (pagesize < 4096) pagesize = 4096;
 	if ((m = dequeue_head(&ctx.free_meta_head))) return m;
+#ifdef MUSL_EMBED
+	/* The program break belongs to the host's malloc. */
+	if (!ctx.brk) ctx.brk = -1;
+#endif
 	if (!ctx.avail_meta_count) {
 		int need_unprotect = 1;
 		if (!ctx.avail_meta_area_count && ctx.brk!=-1) {
