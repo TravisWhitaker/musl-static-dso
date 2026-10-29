@@ -255,10 +255,16 @@ static void seed_ssp(void)
 	__init_ssp(entropy);
 }
 
-/* Priority 101 runs before every unprioritised constructor of the shared
- * object, including the library's own and crtbegin's. Anything that runs
- * even earlier gets lazy initialisation through __embed_ensure_init. */
-__attribute__((__constructor__(101)))
+/* Runs before every other constructor of the shared object: the
+ * library's own, crtbegin's, and those with an init priority, such as
+ * libstdc++'s stream initialisation at init_priority(90) (GCC 13 and
+ * later; any C++ source that includes <iostream> pulls it in), which
+ * allocates. The entry is placed in .init_array.00000 directly, the
+ * section a constructor priority of 0 would get: the linker sorts the
+ * prioritised sections numerically ahead of the unprioritised
+ * .init_array, and the compiler keeps priorities below 101 for the
+ * implementation, which this is. Anything that runs even earlier gets
+ * lazy initialisation through __embed_ensure_init. */
 static void embed_ctor(int argc, char **argv, char **envp)
 {
 	run_init(argc, argv, envp);
@@ -266,6 +272,8 @@ static void embed_ctor(int argc, char **argv, char **envp)
 	 * while the host dynamic linker runs constructors. */
 	seed_ssp();
 }
+static void (*embed_ctor_entry)(int, char **, char **)
+	__attribute__((__section__(".init_array.00000"), __used__)) = embed_ctor;
 
 volatile int __embed_exiting;
 
@@ -278,15 +286,17 @@ void __embed_exit_hooks(void)
 	__stdio_exit();
 }
 
-/* Runs after the object's other destructors (fini_array runs in reverse
- * and prioritised entries come first). First the fork handlers are
+/* Runs after the object's other destructors (fini_array runs in reverse,
+ * and .fini_array.00000 is sorted first, so libstdc++'s stream teardown
+ * at priority 90 still finds musl's stdio open). First the fork handlers are
  * dropped: on glibc < 2.36 that waits for forks in progress, whose
  * handlers would wait for the locks the exit hooks leave held. Then the
  * atexit handlers and C++ static destructors registered with musl run,
  * and musl's stdio is flushed. */
-__attribute__((__destructor__(101)))
 static void embed_dtor(void)
 {
 	__embed_fork_fini();
 	__embed_exit_hooks();
 }
+static void (*embed_dtor_entry)(void)
+	__attribute__((__section__(".fini_array.00000"), __used__)) = embed_dtor;

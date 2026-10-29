@@ -80,6 +80,10 @@ linker. A GHC foreign library (cabal `foreign-library`, with
 in statically) is linked by GHC with `-pgml musl-embed-link`, and with
 `-Wl,--version-script=...` in the package's `ld-options`; see
 `tests/haskell/` in the repository this fork lives in.
+GHC uses the same program to link the temporary shared object through
+which it loads a module's own modules for Template Haskell; that link,
+recognisable by its request for GHC's shared Haskell libraries, is run
+as the compiler would run it.
 
 On the client side nothing special is needed: `cc main.c -L. -lfoo`, or
 `dlopen("libfoo.so", RTLD_NOW)`. With glibc older than 2.34, link the

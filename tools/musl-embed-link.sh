@@ -78,6 +78,19 @@ if test -z "$link" && test $# -gt 0 ; then
 	exec "$cc" "$@"
 fi
 
+# GHC links its own shared objects with the same program (-pgml): to run
+# Template Haskell it loads the module's home modules into its
+# interpreter from a temporary library linked against its shared Haskell
+# libraries (-lHSbase-4.19.2.0-6a4c-ghc9.8.4: the -ghc<version> suffix
+# names the shared form; a standalone foreign library takes the static
+# archives, without it). Such a link is not a static DSO and could not
+# be made one: it runs as the compiler would do it.
+for a ; do
+	case $a in
+	-lHS*-ghc[0-9]*) exec "$cc" "$@" ;;
+	esac
+done
+
 # -lfoo becomes -l:libfoo.a, which is what it means here (see -Bstatic
 # below), and which keeps nixpkgs' ld wrapper from adding an rpath for
 # each directory that also holds a libfoo.so.
