@@ -50,11 +50,12 @@ CC=x86_64-unknown-linux-musl-gcc musl-embed-link -o libfoo.so \
 ```
 
 `musl-embed-link` (installed in `$prefix/bin`) runs the compiler driver
-with the required flags, adds `libc-embed.a`, `libgcc.a` and `libgcc_eh.a`,
-and then checks the result with `musl-embed-check-so`. It takes what
-`cc -shared` takes, including response files (`@file`), so a build system
-can use it as its linker for the library. The version script should list
-the library's public API and make everything else local:
+with the required flags, adds `libc-embed.a` and the compiler's `libgcc.a`
+(and `libgcc_eh.a` where that is separate), and then checks the result
+with `musl-embed-check-so`. It takes what `cc -shared` takes, including
+response files (`@file`), so a build system can use it as its linker for
+the library. The version script should list the library's public API and
+make everything else local:
 
 ```
 { global: foo_*; local: *; };

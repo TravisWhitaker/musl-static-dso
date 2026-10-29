@@ -111,6 +111,11 @@ test -f "$libdir/libc-embed.a" || { echo "$0: $libdir/libc-embed.a not found" >&
 # --hash-style=both: DT_HASH for dynamic linkers older than glibc 2.5.
 # -z nopack-relative-relocs: DT_RELR needs glibc 2.36.
 # -u __embed_ensure_init: pulls in musl's initialisation.
+# The compiler's runtime is libgcc.a, plus libgcc_eh.a where the unwinder
+# is separate from it (a toolchain built without libgcc_s keeps it in
+# libgcc.a and has no libgcc_eh.a).
+libcc=-lgcc
+case $("$cc" -print-file-name=libgcc_eh.a) in /*) libcc="$libcc -lgcc_eh" ;; esac
 link () {
 	"$cc" -shared -nodefaultlibs \
 		${exports:+"-Wl,--version-script=$exports"} \
@@ -120,7 +125,7 @@ link () {
 		-Wl,--exclude-libs,libc-embed.a:libgcc.a:libgcc_eh.a \
 		-Wl,-u,__embed_ensure_init \
 		-o "$out" "$@" \
-		-Wl,--start-group "$libdir/libc-embed.a" -lgcc -lgcc_eh -Wl,--end-group
+		-Wl,--start-group "$libdir/libc-embed.a" $libcc -Wl,--end-group
 }
 
 link "$@" || exit
