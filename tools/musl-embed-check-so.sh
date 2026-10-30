@@ -102,8 +102,18 @@ else
 	fail "no .init_array (musl's constructor is missing)"
 fi
 
+# Direct thread-pointer reads (__builtin_thread_pointer, inline asm,
+# local-exec TLS) use the absolute form, `mov %fs:0x0,%rax`; the only
+# one allowed is the stack protector's %fs:0x28. Register-relative forms
+# (`%fs:(%rax)`) belong to initial-exec and TLS-descriptor accesses,
+# rejected above by their relocations, and are also what objdump prints
+# for data in .text: GHC's info tables precede their entry code and have
+# no symbol, so a 0x64 byte in them becomes an fs prefix on whatever
+# follows. The moffs encoding (movabs) is never used for the thread
+# pointer by compilers or gas; it too only comes from such mis-decoding.
 if test $arch = x86_64 && command -v "$OBJDUMP" >/dev/null ; then
-	fs=$($OBJDUMP -d "$so" | grep '%fs:' | grep -v '%fs:0x28')
+	fs=$($OBJDUMP -d "$so" | grep -E '%fs:-?0x[0-9a-f]+([^(0-9a-f]|$)' |
+		grep -vE '%fs:0x28([^(0-9a-f]|$)|movabs')
 	test -n "$fs" && fail "accesses the thread pointer directly:
 $fs"
 fi
